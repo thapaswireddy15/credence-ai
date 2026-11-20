@@ -432,6 +432,7 @@ Recorded runs (HTML and JSON reports in `postman/reports/`):
 |---|---|---|---|
 | Local, MySQL mode (`credence_ai_test` database) | 19 | 51 | 0 |
 | Local, predict-only mode (`DATABASE_ENABLED=false`) | 19 | 45 | 0 |
+| **Live Render deployment** (https://credence-ai-api.onrender.com, predict-only) | 19 | 45 | 0 |
 
 ---
 
@@ -447,6 +448,8 @@ The notebook reproduces the same metrics as `ml/train.py`. Kaggle is used **only
 ---
 
 ## 13. Deployment on Render
+
+**Live API:** https://credence-ai-api.onrender.com (Swagger: https://credence-ai-api.onrender.com/docs). It passed the full Postman collection, 45/45 assertions (`postman/reports/newman-render.html`).
 
 The public deployment runs in **predict-only mode** (`DATABASE_ENABLED=false`, set in `render.yaml`), so it needs **no database**. Your local MySQL is never connected to the internet.
 
