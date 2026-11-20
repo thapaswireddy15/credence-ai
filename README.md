@@ -392,7 +392,7 @@ Recorded runs (HTML and JSON reports in `postman/reports/`):
 | Target | Requests | Assertions | Failed |
 |---|---|---|---|
 | Local server, no database (`newman-local.html`) | 19 | 51 | 0 |
-| Live Render deployment | *re-run after the database-free version is deployed* | | |
+| **Live Render deployment** (https://credence-ai-api.onrender.com, `newman-render.html`) | 19 | 51 | 0 |
 
 ---
 
@@ -406,7 +406,7 @@ To re-run it, open it in VS Code (select the `.venv` interpreter) and choose **R
 
 ## 13. Deployment on Render
 
-**Live API:** https://credence-ai-api.onrender.com (Swagger: https://credence-ai-api.onrender.com/docs).
+**Live API:** https://credence-ai-api.onrender.com (Swagger: https://credence-ai-api.onrender.com/docs). It passed the full Postman collection, 51/51 assertions.
 
 The service needs **no database** and no secrets.
 
