@@ -1,0 +1,22 @@
+# Render Blueprint for the Credence AI backend.
+#
+# The public deployment runs in PREDICT-ONLY mode (DATABASE_ENABLED=false):
+# /predictions and /predictions/batch return predictions (with missing-value
+# imputation) but nothing is stored, and the history / portfolio endpoints
+# return 503. Render does not offer MySQL; to enable storage later, set
+# DATABASE_ENABLED=true and DATABASE_URL to a hosted MySQL 8 instance.
+services:
+  - type: web
+    name: credence-ai-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.14.3
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_ENABLED
+        value: "false"

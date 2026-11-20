@@ -1,0 +1,146 @@
+{
+  "description": "Held-out test set (6,000 rows). Values are removed, imputed with training medians/modes, then scored by the unchanged trained pipeline.",
+  "random_missing_cells": {
+    "0%": {
+      "roc_auc": 0.7747,
+      "f1_default": 0.5424
+    },
+    "5%": {
+      "roc_auc": 0.7685,
+      "f1_default": 0.5265
+    },
+    "10%": {
+      "roc_auc": 0.7668,
+      "f1_default": 0.5158
+    },
+    "20%": {
+      "roc_auc": 0.7623,
+      "f1_default": 0.4839
+    },
+    "30%": {
+      "roc_auc": 0.7558,
+      "f1_default": 0.4455
+    }
+  },
+  "single_feature_entirely_missing": {
+    "LIMIT_BAL": {
+      "roc_auc": 0.7684,
+      "f1_default": 0.5298
+    },
+    "SEX": {
+      "roc_auc": 0.7747,
+      "f1_default": 0.5412
+    },
+    "EDUCATION": {
+      "roc_auc": 0.7733,
+      "f1_default": 0.5395
+    },
+    "MARRIAGE": {
+      "roc_auc": 0.7744,
+      "f1_default": 0.5386
+    },
+    "AGE": {
+      "roc_auc": 0.7742,
+      "f1_default": 0.5439
+    },
+    "PAY_0": {
+      "roc_auc": 0.7439,
+      "f1_default": 0.4545
+    },
+    "PAY_2": {
+      "roc_auc": 0.7737,
+      "f1_default": 0.5351
+    },
+    "PAY_3": {
+      "roc_auc": 0.7744,
+      "f1_default": 0.5411
+    },
+    "PAY_4": {
+      "roc_auc": 0.7745,
+      "f1_default": 0.5386
+    },
+    "PAY_5": {
+      "roc_auc": 0.7743,
+      "f1_default": 0.5366
+    },
+    "PAY_6": {
+      "roc_auc": 0.7743,
+      "f1_default": 0.541
+    },
+    "BILL_AMT1": {
+      "roc_auc": 0.7678,
+      "f1_default": 0.5147
+    },
+    "BILL_AMT2": {
+      "roc_auc": 0.7741,
+      "f1_default": 0.5345
+    },
+    "BILL_AMT3": {
+      "roc_auc": 0.7731,
+      "f1_default": 0.5328
+    },
+    "BILL_AMT4": {
+      "roc_auc": 0.7743,
+      "f1_default": 0.5284
+    },
+    "BILL_AMT5": {
+      "roc_auc": 0.7736,
+      "f1_default": 0.5333
+    },
+    "BILL_AMT6": {
+      "roc_auc": 0.7747,
+      "f1_default": 0.5237
+    },
+    "PAY_AMT1": {
+      "roc_auc": 0.7738,
+      "f1_default": 0.5311
+    },
+    "PAY_AMT2": {
+      "roc_auc": 0.7756,
+      "f1_default": 0.5278
+    },
+    "PAY_AMT3": {
+      "roc_auc": 0.7728,
+      "f1_default": 0.5234
+    },
+    "PAY_AMT4": {
+      "roc_auc": 0.7731,
+      "f1_default": 0.5247
+    },
+    "PAY_AMT5": {
+      "roc_auc": 0.7766,
+      "f1_default": 0.533
+    },
+    "PAY_AMT6": {
+      "roc_auc": 0.7743,
+      "f1_default": 0.528
+    }
+  },
+  "most_damaging_features_when_missing": [
+    {
+      "feature": "PAY_0",
+      "roc_auc": 0.7439,
+      "auc_drop": 0.0308
+    },
+    {
+      "feature": "BILL_AMT1",
+      "roc_auc": 0.7678,
+      "auc_drop": 0.0069
+    },
+    {
+      "feature": "LIMIT_BAL",
+      "roc_auc": 0.7684,
+      "auc_drop": 0.0063
+    },
+    {
+      "feature": "PAY_AMT3",
+      "roc_auc": 0.7728,
+      "auc_drop": 0.0019
+    },
+    {
+      "feature": "BILL_AMT3",
+      "roc_auc": 0.7731,
+      "auc_drop": 0.0016
+    }
+  ]
+}

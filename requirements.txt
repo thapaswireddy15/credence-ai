@@ -1,0 +1,28 @@
+# ---- Machine learning ----
+pandas==3.1.1
+numpy==2.5.5
+scikit-learn==1.9.1   # must match the version used to train models/credence_model.joblib
+scipy==1.18.1
+matplotlib==3.11.2
+seaborn==0.13.2
+joblib==1.6.0
+
+# ---- Backend ----
+fastapi==0.165.0
+uvicorn[standard]==0.54.0
+pydantic==2.14.4
+python-dotenv==1.2.4
+
+# ---- Database (MySQL) ----
+SQLAlchemy==2.1.9
+PyMySQL==1.2.4
+cryptography==50.0.2   # required by PyMySQL for MySQL 8 caching_sha2_password auth
+
+# ---- Testing ----
+pytest==9.2.0
+httpx==0.28.1
+
+# ---- Notebook (local execution of notebooks/) ----
+nbformat==5.11.1
+nbconvert==7.17.2
+ipykernel==7.4.0

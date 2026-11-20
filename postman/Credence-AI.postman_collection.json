@@ -1,0 +1,835 @@
+{
+  "info": {
+    "_postman_id": "00000000-0000-0000-0000-00000000002a",
+    "name": "Credence AI API",
+    "description": "Automated tests for the Credence AI credit default prediction API. Works against a MySQL-backed server (database_mode=enabled) and the predict-only public deployment (database_mode=disabled): GET /health records the mode and later tests adapt. Run the folders in order.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Service",
+      "item": [
+        {
+          "name": "GET / - service info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": []
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"stakeholder is Credit Portfolio Strategist\", () => pm.expect(b.stakeholder).to.eql(\"Credit Portfolio Strategist\"));",
+                  "pm.test(\"database_mode reported\", () => pm.expect([\"enabled\", \"disabled\"]).to.include(b.database_mode));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set(\"dbMode\", b.database_mode);",
+                  "pm.test(\"status ok\", () => pm.expect(b.status).to.eql(\"ok\"));",
+                  "pm.test(\"model loaded\", () => pm.expect(b.model_loaded).to.be.true);",
+                  "pm.test(\"missing-value imputation available\", () => pm.expect(b.missing_value_imputation).to.be.true);",
+                  "pm.test(\"database connected when enabled / null when disabled\", () => {",
+                  "    if (b.database_mode === \"enabled\") pm.expect(b.database_connected).to.be.true;",
+                  "    else pm.expect(b.database_connected).to.be.null;",
+                  "});",
+                  "pm.test(\"response time < 2s\", () => pm.expect(pm.response.responseTime).to.be.below(2000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /model/info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/model/info",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "model",
+                "info"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"target is default.payment.next.month\", () => pm.expect(b.target).to.eql(\"default.payment.next.month\"));",
+                  "pm.test(\"23 features\", () => pm.expect(b.features).to.have.lengthOf(23));",
+                  "pm.test(\"threshold in (0,1)\", () => { pm.expect(b.decision_threshold).to.be.above(0); pm.expect(b.decision_threshold).to.be.below(1); });",
+                  "pm.test(\"CV and test metrics present\", () => { pm.expect(b.cv_metrics).to.have.property(\"f1\"); pm.expect(b.test_metrics_tuned_threshold).to.have.property(\"roc_auc\"); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Prediction - complete record",
+      "item": [
+        {
+          "name": "POST /predictions - complete record",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/predictions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "predictions"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer_ref\": \"POSTMAN-1\",\n  \"LIMIT_BAL\": 50000,\n  \"SEX\": 2,\n  \"EDUCATION\": 2,\n  \"MARRIAGE\": 1,\n  \"AGE\": 37,\n  \"PAY_0\": 2,\n  \"PAY_2\": 2,\n  \"PAY_3\": 2,\n  \"PAY_4\": 0,\n  \"PAY_5\": 0,\n  \"PAY_6\": 0,\n  \"BILL_AMT1\": 46990,\n  \"BILL_AMT2\": 48233,\n  \"BILL_AMT3\": 49291,\n  \"BILL_AMT4\": 28314,\n  \"BILL_AMT5\": 28959,\n  \"BILL_AMT6\": 29547,\n  \"PAY_AMT1\": 0,\n  \"PAY_AMT2\": 0,\n  \"PAY_AMT3\": 1000,\n  \"PAY_AMT4\": 1100,\n  \"PAY_AMT5\": 1069,\n  \"PAY_AMT6\": 1000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const dbOn = pm.collectionVariables.get(\"dbMode\") === \"enabled\";",
+                  "pm.test(\"201 Created\", () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"probability in [0,1]\", () => { pm.expect(b.default_probability).to.be.within(0, 1); });",
+                  "pm.test(\"high-risk example predicted as Default\", () => { pm.expect(b.predicted_default).to.be.true; pm.expect(b.prediction_label).to.eql(\"Default\"); });",
+                  "pm.test(\"risk band valid\", () => pm.expect([\"LOW\", \"MEDIUM\", \"HIGH\"]).to.include(b.risk_band));",
+                  "pm.test(\"nothing imputed for a complete record\", () => pm.expect(b.imputed_features).to.eql([]));",
+                  "pm.test(\"stored only when the database is enabled\", () => {",
+                  "    pm.expect(b.stored).to.eql(dbOn);",
+                  "    if (dbOn) { pm.expect(b.prediction_id).to.be.a(\"number\"); pm.collectionVariables.set(\"predictionId\", b.prediction_id); }",
+                  "    else pm.expect(b.prediction_id).to.be.null;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Missing values",
+      "item": [
+        {
+          "name": "POST /predictions - BILL_AMT3 omitted",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/predictions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "predictions"
+              ]
+            },
+            "description": "A feature left out of the JSON is imputed with the training-split median.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer_ref\": \"POSTMAN-1\",\n  \"LIMIT_BAL\": 50000,\n  \"SEX\": 2,\n  \"EDUCATION\": 2,\n  \"MARRIAGE\": 1,\n  \"AGE\": 37,\n  \"PAY_0\": 2,\n  \"PAY_2\": 2,\n  \"PAY_3\": 2,\n  \"PAY_4\": 0,\n  \"PAY_5\": 0,\n  \"PAY_6\": 0,\n  \"BILL_AMT1\": 46990,\n  \"BILL_AMT2\": 48233,\n  \"BILL_AMT4\": 28314,\n  \"BILL_AMT5\": 28959,\n  \"BILL_AMT6\": 29547,\n  \"PAY_AMT1\": 0,\n  \"PAY_AMT2\": 0,\n  \"PAY_AMT3\": 1000,\n  \"PAY_AMT4\": 1100,\n  \"PAY_AMT5\": 1069,\n  \"PAY_AMT6\": 1000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"201 Created (missing value accepted)\", () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"BILL_AMT3 reported as imputed\", () => pm.expect(b.imputed_features).to.eql([\"BILL_AMT3\"]));",
+                  "pm.test(\"valid probability\", () => pm.expect(b.default_probability).to.be.within(0, 1));",
+                  "if (b.prediction_id) pm.collectionVariables.set(\"imputedPredictionId\", b.prediction_id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /predictions - explicit nulls",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/predictions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "predictions"
+              ]
+            },
+            "description": "null values are treated exactly like omitted values.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer_ref\": \"POSTMAN-1\",\n  \"LIMIT_BAL\": 50000,\n  \"SEX\": 2,\n  \"EDUCATION\": null,\n  \"MARRIAGE\": 1,\n  \"AGE\": null,\n  \"PAY_0\": 2,\n  \"PAY_2\": 2,\n  \"PAY_3\": 2,\n  \"PAY_4\": 0,\n  \"PAY_5\": 0,\n  \"PAY_6\": 0,\n  \"BILL_AMT1\": 46990,\n  \"BILL_AMT2\": 48233,\n  \"BILL_AMT3\": 49291,\n  \"BILL_AMT4\": 28314,\n  \"BILL_AMT5\": 28959,\n  \"BILL_AMT6\": 29547,\n  \"PAY_AMT1\": 0,\n  \"PAY_AMT2\": null,\n  \"PAY_AMT3\": 1000,\n  \"PAY_AMT4\": 1100,\n  \"PAY_AMT5\": 1069,\n  \"PAY_AMT6\": 1000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"201 Created\", () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"AGE, EDUCATION, PAY_AMT2 imputed\", () => pm.expect(b.imputed_features.slice().sort()).to.eql([\"AGE\", \"EDUCATION\", \"PAY_AMT2\"]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /predictions - 11 missing (maximum allowed)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/predictions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "predictions"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer_ref\": \"POSTMAN-1\",\n  \"LIMIT_BAL\": 50000,\n  \"PAY_0\": 2,\n  \"PAY_2\": 2,\n  \"PAY_3\": 2,\n  \"PAY_4\": 0,\n  \"PAY_5\": 0,\n  \"PAY_6\": 0,\n  \"PAY_AMT1\": 0,\n  \"PAY_AMT2\": 0,\n  \"PAY_AMT3\": 1000,\n  \"PAY_AMT4\": 1100,\n  \"PAY_AMT5\": 1069\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"201 Created\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"11 features imputed\", () => pm.expect(pm.response.json().imputed_features).to.have.lengthOf(11));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /predictions - 12 missing (rejected)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/predictions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "predictions"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer_ref\": \"POSTMAN-1\",\n  \"BILL_AMT2\": 48233,\n  \"BILL_AMT3\": 49291,\n  \"BILL_AMT4\": 28314,\n  \"BILL_AMT5\": 28959,\n  \"BILL_AMT6\": 29547,\n  \"PAY_AMT1\": 0,\n  \"PAY_AMT2\": 0,\n  \"PAY_AMT3\": 1000,\n  \"PAY_AMT4\": 1100,\n  \"PAY_AMT5\": 1069,\n  \"PAY_AMT6\": 1000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"422 Unprocessable\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"explains the limit\", () => pm.expect(pm.response.text()).to.include(\"Too many missing features (12 of 23\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Input validation",
+      "item": [
+        {
+          "name": "POST /predictions - SEX=3 (invalid)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/predictions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "predictions"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer_ref\": \"POSTMAN-1\",\n  \"LIMIT_BAL\": 50000,\n  \"SEX\": 3,\n  \"EDUCATION\": 2,\n  \"MARRIAGE\": 1,\n  \"AGE\": 37,\n  \"PAY_0\": 2,\n  \"PAY_2\": 2,\n  \"PAY_3\": 2,\n  \"PAY_4\": 0,\n  \"PAY_5\": 0,\n  \"PAY_6\": 0,\n  \"BILL_AMT1\": 46990,\n  \"BILL_AMT2\": 48233,\n  \"BILL_AMT3\": 49291,\n  \"BILL_AMT4\": 28314,\n  \"BILL_AMT5\": 28959,\n  \"BILL_AMT6\": 29547,\n  \"PAY_AMT1\": 0,\n  \"PAY_AMT2\": 0,\n  \"PAY_AMT3\": 1000,\n  \"PAY_AMT4\": 1100,\n  \"PAY_AMT5\": 1069,\n  \"PAY_AMT6\": 1000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"422 Unprocessable\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"error points at SEX\", () => pm.expect(pm.response.json().detail[0].loc).to.include(\"SEX\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /predictions - AGE=10 (invalid)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/predictions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "predictions"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer_ref\": \"POSTMAN-1\",\n  \"LIMIT_BAL\": 50000,\n  \"SEX\": 2,\n  \"EDUCATION\": 2,\n  \"MARRIAGE\": 1,\n  \"AGE\": 10,\n  \"PAY_0\": 2,\n  \"PAY_2\": 2,\n  \"PAY_3\": 2,\n  \"PAY_4\": 0,\n  \"PAY_5\": 0,\n  \"PAY_6\": 0,\n  \"BILL_AMT1\": 46990,\n  \"BILL_AMT2\": 48233,\n  \"BILL_AMT3\": 49291,\n  \"BILL_AMT4\": 28314,\n  \"BILL_AMT5\": 28959,\n  \"BILL_AMT6\": 29547,\n  \"PAY_AMT1\": 0,\n  \"PAY_AMT2\": 0,\n  \"PAY_AMT3\": 1000,\n  \"PAY_AMT4\": 1100,\n  \"PAY_AMT5\": 1069,\n  \"PAY_AMT6\": 1000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"422 Unprocessable\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /predictions - target sent as input (rejected)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/predictions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "predictions"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer_ref\": \"POSTMAN-1\",\n  \"LIMIT_BAL\": 50000,\n  \"SEX\": 2,\n  \"EDUCATION\": 2,\n  \"MARRIAGE\": 1,\n  \"AGE\": 37,\n  \"PAY_0\": 2,\n  \"PAY_2\": 2,\n  \"PAY_3\": 2,\n  \"PAY_4\": 0,\n  \"PAY_5\": 0,\n  \"PAY_6\": 0,\n  \"BILL_AMT1\": 46990,\n  \"BILL_AMT2\": 48233,\n  \"BILL_AMT3\": 49291,\n  \"BILL_AMT4\": 28314,\n  \"BILL_AMT5\": 28959,\n  \"BILL_AMT6\": 29547,\n  \"PAY_AMT1\": 0,\n  \"PAY_AMT2\": 0,\n  \"PAY_AMT3\": 1000,\n  \"PAY_AMT4\": 1100,\n  \"PAY_AMT5\": 1069,\n  \"PAY_AMT6\": 1000,\n  \"default.payment.next.month\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"422 Unprocessable\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /predictions/batch - empty (rejected)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/predictions/batch",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "predictions",
+                "batch"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customers\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"422 Unprocessable\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Batch / portfolio scoring",
+      "item": [
+        {
+          "name": "POST /predictions/batch - portfolio with one incomplete record",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/predictions/batch",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "predictions",
+                "batch"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"batch_name\": \"Postman portfolio test\",\n  \"customers\": [\n    {\n      \"customer_ref\": \"POSTMAN-1\",\n      \"LIMIT_BAL\": 50000,\n      \"SEX\": 2,\n      \"EDUCATION\": 2,\n      \"MARRIAGE\": 1,\n      \"AGE\": 37,\n      \"PAY_0\": 2,\n      \"PAY_2\": 2,\n      \"PAY_3\": 2,\n      \"PAY_4\": 0,\n      \"PAY_5\": 0,\n      \"PAY_6\": 0,\n      \"BILL_AMT1\": 46990,\n      \"BILL_AMT2\": 48233,\n      \"BILL_AMT3\": 49291,\n      \"BILL_AMT4\": 28314,\n      \"BILL_AMT5\": 28959,\n      \"BILL_AMT6\": 29547,\n      \"PAY_AMT1\": 0,\n      \"PAY_AMT2\": 0,\n      \"PAY_AMT3\": 1000,\n      \"PAY_AMT4\": 1100,\n      \"PAY_AMT5\": 1069,\n      \"PAY_AMT6\": 1000\n    },\n    {\n      \"customer_ref\": \"POSTMAN-2\",\n      \"LIMIT_BAL\": 500000,\n      \"SEX\": 2,\n      \"EDUCATION\": 1,\n      \"MARRIAGE\": 1,\n      \"AGE\": null,\n      \"PAY_0\": -1,\n      \"PAY_2\": -1,\n      \"PAY_3\": -1,\n      \"PAY_4\": -1,\n      \"PAY_5\": -1,\n      \"PAY_6\": -1,\n      \"BILL_AMT1\": 12000,\n      \"BILL_AMT2\": 9000,\n      \"BILL_AMT3\": 15000,\n      \"BILL_AMT4\": 8000,\n      \"BILL_AMT5\": 11000,\n      \"BILL_AMT6\": 7000,\n      \"PAY_AMT2\": 15000,\n      \"PAY_AMT3\": 8000,\n      \"PAY_AMT4\": 11000,\n      \"PAY_AMT5\": 7000,\n      \"PAY_AMT6\": 10000\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const dbOn = pm.collectionVariables.get(\"dbMode\") === \"enabled\";",
+                  "pm.test(\"201 Created\", () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"2 customers, 1 predicted default\", () => { pm.expect(b.total_customers).to.eql(2); pm.expect(b.predicted_defaults).to.eql(1); });",
+                  "pm.test(\"1 customer with imputed values\", () => pm.expect(b.customers_with_imputed_values).to.eql(1));",
+                  "pm.test(\"risk bands sum to total\", () => pm.expect(b.risk_band_breakdown.reduce((s, x) => s + x.customers, 0)).to.eql(2));",
+                  "pm.test(\"stored only when the database is enabled\", () => {",
+                  "    pm.expect(b.stored).to.eql(dbOn);",
+                  "    if (dbOn) pm.collectionVariables.set(\"batchId\", b.batch_id); else pm.expect(b.batch_id).to.be.null;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. History and portfolio analytics (MySQL)",
+      "item": [
+        {
+          "name": "GET /predictions - riskiest first",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/predictions?limit=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "predictions"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const dbOn = pm.collectionVariables.get(\"dbMode\") === \"enabled\";",
+                  "if (dbOn) {",
+                  "    pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "    const p = pm.response.json().items.map(i => i.default_probability);",
+                  "    pm.test(\"sorted by probability, descending\", () => pm.expect(p).to.eql(p.slice().sort((a, b) => b - a)));",
+                  "} else {",
+                  "    pm.test(\"503 when database disabled\", () => pm.response.to.have.status(503));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /predictions/{id} - imputed record",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/predictions/{{imputedPredictionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "predictions",
+                "{{imputedPredictionId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const dbOn = pm.collectionVariables.get(\"dbMode\") === \"enabled\";",
+                  "if (dbOn) {",
+                  "    pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "    const b = pm.response.json();",
+                  "    pm.test(\"imputed feature persisted\", () => pm.expect(b.imputed_features).to.eql([\"BILL_AMT3\"]));",
+                  "    pm.test(\"stored value is the training median\", () => pm.expect(b.BILL_AMT3).to.eql(20031));",
+                  "} else {",
+                  "    pm.test(\"503 when database disabled\", () => pm.response.to.have.status(503));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /portfolio/summary - batch",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/portfolio/summary?batch_id={{batchId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "portfolio",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "batch_id",
+                  "value": "{{batchId}}"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const dbOn = pm.collectionVariables.get(\"dbMode\") === \"enabled\";",
+                  "if (dbOn) {",
+                  "    pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "    const b = pm.response.json();",
+                  "    pm.test(\"2 customers in batch\", () => pm.expect(b.total_customers).to.eql(2));",
+                  "    pm.test(\"credit-limit-at-risk share in [0,1]\", () => pm.expect(b.share_of_credit_limit_at_risk).to.be.within(0, 1));",
+                  "} else {",
+                  "    pm.test(\"503 when database disabled\", () => pm.response.to.have.status(503));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /portfolio/segments - PAY_0",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/portfolio/segments?dimension=PAY_0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "portfolio",
+                "segments"
+              ],
+              "query": [
+                {
+                  "key": "dimension",
+                  "value": "PAY_0"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const dbOn = pm.collectionVariables.get(\"dbMode\") === \"enabled\";",
+                  "if (dbOn) {",
+                  "    pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "    const s = pm.response.json().segments.map(x => x.average_default_probability);",
+                  "    pm.test(\"riskiest segment first\", () => pm.expect(s).to.eql(s.slice().sort((a, b) => b - a)));",
+                  "} else {",
+                  "    pm.test(\"503 when database disabled\", () => pm.response.to.have.status(503));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE /predictions/{id}",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/predictions/{{predictionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "predictions",
+                "{{predictionId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const dbOn = pm.collectionVariables.get(\"dbMode\") === \"enabled\";",
+                  "if (dbOn) pm.test(\"204 No Content\", () => pm.response.to.have.status(204));",
+                  "else pm.test(\"503 when database disabled\", () => pm.response.to.have.status(503));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /predictions/{id} - after delete",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/predictions/{{predictionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "predictions",
+                "{{predictionId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const dbOn = pm.collectionVariables.get(\"dbMode\") === \"enabled\";",
+                  "if (dbOn) pm.test(\"404 after delete\", () => pm.response.to.have.status(404));",
+                  "else pm.test(\"503 when database disabled\", () => pm.response.to.have.status(503));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "dbMode",
+      "value": ""
+    },
+    {
+      "key": "predictionId",
+      "value": "0"
+    },
+    {
+      "key": "imputedPredictionId",
+      "value": "0"
+    },
+    {
+      "key": "batchId",
+      "value": "1"
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+model,cv_f1,cv_roc_auc,test_accuracy,test_precision_1,test_recall_1,test_f1_1,test_roc_auc,false_positives,false_negatives
+Logistic Regression,0.5069,0.7518,0.7135,0.4044,0.6247,0.491,0.7405,1221.0,498.0
+Decision Tree,0.5291,0.7565,0.7662,0.4759,0.5644,0.5164,0.7481,825.0,578.0
+Random Forest,0.546,0.7819,0.7937,0.5319,0.5599,0.5455,0.7747,654.0,584.0
+K-Nearest Neighbors,0.4413,0.7457,0.8085,0.6206,0.3451,0.4436,0.7417,280.0,869.0

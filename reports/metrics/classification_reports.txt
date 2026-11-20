@@ -1,0 +1,50 @@
+=== Logistic Regression (threshold 0.5) ===
+                precision    recall  f1-score   support
+
+No default (0)     0.8739    0.7387    0.8006      4673
+   Default (1)     0.4044    0.6247    0.4910      1327
+
+      accuracy                         0.7135      6000
+     macro avg     0.6392    0.6817    0.6458      6000
+  weighted avg     0.7701    0.7135    0.7322      6000
+
+=== Decision Tree (threshold 0.5) ===
+                precision    recall  f1-score   support
+
+No default (0)     0.8694    0.8235    0.8458      4673
+   Default (1)     0.4759    0.5644    0.5164      1327
+
+      accuracy                         0.7662      6000
+     macro avg     0.6726    0.6939    0.6811      6000
+  weighted avg     0.7824    0.7662    0.7729      6000
+
+=== Random Forest (threshold 0.5) ===
+                precision    recall  f1-score   support
+
+No default (0)     0.8731    0.8600    0.8665      4673
+   Default (1)     0.5319    0.5599    0.5455      1327
+
+      accuracy                         0.7937      6000
+     macro avg     0.7025    0.7100    0.7060      6000
+  weighted avg     0.7976    0.7937    0.7955      6000
+
+=== K-Nearest Neighbors (threshold 0.5) ===
+                precision    recall  f1-score   support
+
+No default (0)     0.8349    0.9401    0.8843      4673
+   Default (1)     0.6206    0.3451    0.4436      1327
+
+      accuracy                         0.8085      6000
+     macro avg     0.7277    0.6426    0.6640      6000
+  weighted avg     0.7875    0.8085    0.7869      6000
+
+=== Random Forest (tuned threshold 0.5184) ===
+                precision    recall  f1-score   support
+
+No default (0)     0.8696    0.8722    0.8709      4673
+   Default (1)     0.5453    0.5396    0.5424      1327
+
+      accuracy                         0.7987      6000
+     macro avg     0.7075    0.7059    0.7067      6000
+  weighted avg     0.7979    0.7987    0.7983      6000
+
