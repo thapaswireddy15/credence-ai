@@ -1,6 +1,6 @@
 # Credence AI – Credit Card Default Prediction System
 
-Credence AI is a backend system that predicts whether a credit card customer will **default on next month's payment**, using their historical financial and repayment information. It stores every prediction in **MySQL** and provides portfolio-level risk analytics through a **FastAPI** REST API.
+Credence AI is a backend system that predicts whether a credit card customer will **default on next month's payment**, using their historical financial and repayment information. It serves predictions and portfolio-level risk analytics through a **FastAPI** REST API. **No database is required**: predictions are kept in a temporary in-memory history while the service runs.
 
 **Domain:** Financial Technology / Credit Risk Prediction
 **Stakeholder:** Credit Portfolio Strategist (the only user role)
@@ -26,7 +26,7 @@ Credence AI is the machine learning backend that supports these decisions. It is
 |---|---|
 | Machine learning | Python, Pandas, NumPy, Scikit-learn, Matplotlib, Seaborn, Joblib |
 | Backend | FastAPI, Uvicorn, Pydantic |
-| Database | **MySQL 8**, SQLAlchemy ORM, PyMySQL |
+| Storage | None (no database). Temporary in-memory prediction history, cleared on restart |
 | Testing | Pytest, FastAPI TestClient, HTTPX |
 | Development & deployment | VS Code, Jupyter Notebook (analysis), Git & GitHub, Render (API hosting), Postman/Newman (API testing) |
 
@@ -37,12 +37,10 @@ Credence AI is the machine learning backend that supports these decisions. It is
 ```
 Credence AI/
 ├── app/                        # FastAPI backend
-│   ├── main.py                 # app, lifespan (loads model + creates tables), /, /health, /model/info
+│   ├── main.py                 # app, lifespan (loads model, creates in-memory store), /, /health, /model/info
 │   ├── config.py               # settings from environment / .env
-│   ├── database.py             # SQLAlchemy engine, session, MySQL database creation
-│   ├── models.py               # ORM tables: predictions, prediction_batches
 │   ├── schemas.py              # Pydantic request/response models + input validation
-│   ├── crud.py                 # database queries and portfolio aggregations
+│   ├── store.py                # temporary in-memory prediction history + portfolio aggregations
 │   ├── predictor.py            # loads the joblib pipeline and makes predictions
 │   ├── dependencies.py         # shared FastAPI dependencies
 │   └── routers/
@@ -68,13 +66,11 @@ Credence AI/
 │   ├── figures/                # 14 EDA and evaluation figures
 │   └── metrics/                # eda_summary.json, model_comparison.{csv,json}, classification_reports.txt,
 │                               # missing_value_robustness.json
-├── scripts/init_db.py          # creates the MySQL database + tables, exports sql/schema.sql
-├── sql/schema.sql              # MySQL DDL, generated from the ORM models
-├── tests/                      # pytest suite (49 tests)
+├── tests/                      # pytest suite (48 tests, no database needed)
 ├── postman/                    # Postman collection + environments + Newman reports
 ├── requirements.txt
 ├── render.yaml                 # Render deployment blueprint
-├── .env.example                # copy to .env and fill in
+├── .env.example                # optional settings (no credentials needed)
 └── pytest.ini
 ```
 
@@ -207,26 +203,15 @@ The most important features are `PAY_0`, `PAY_2`, `PAY_3`, `LIMIT_BAL` and `PAY_
 
 ---
 
-## 8. Database design (MySQL)
+## 8. Prediction history (no database)
 
-Tables are defined with the SQLAlchemy ORM (`app/models.py`) and created automatically when the API starts. The DDL is in `sql/schema.sql`.
+Credence AI uses **no database** (no MySQL, SQLite or MongoDB). Every prediction is kept in a **temporary in-memory history** (`app/store.py`) for as long as the API process runs:
 
-**`prediction_batches`**: one row per portfolio scoring run.
-Columns: `id` PK, `name`, `total_customers`, `predicted_defaults`, `average_default_probability`, `created_at`.
-
-**`predictions`**: one row per customer prediction, storing the **exact 23 inputs** together with the output for auditability.
-Columns: `id` PK, `batch_id` FK → `prediction_batches.id` (nullable, `ON DELETE SET NULL`), `customer_ref`, the 23 features, `default_probability` (DOUBLE), `predicted_default`, `risk_band` ENUM('LOW','MEDIUM','HIGH'), `decision_threshold`, `model_name`, `model_version`, `imputed_features`, `created_at`.
-For imputed inputs, the feature columns hold the **values the model actually used**, and `imputed_features` lists which ones were filled in (NULL = complete record). Databases created before this column existed are upgraded automatically on startup. The upgrade only adds the column and never drops data.
-Indexes on `batch_id`, `customer_ref`, `risk_band` and `created_at`. Engine: InnoDB, charset utf8mb4.
-
-A batch and all of its predictions are written in **one transaction**, so a failure leaves no partial batch behind.
-
-**Database modes (`DATABASE_ENABLED`):**
-
-| Mode | When | Behaviour |
-|---|---|---|
-| `true` (default) | Local development, teammates, any deployment with MySQL | Every prediction is stored. History and portfolio endpoints work |
-| `false` (predict-only) | Public Render deployment | No MySQL needed. `/predictions` and `/predictions/batch` return results with `stored: false` and `prediction_id: null`. History, delete and portfolio endpoints return **503** with an explanation |
+* `GET /predictions`, `GET /predictions/{id}`, `DELETE /predictions/{id}` and the `/portfolio` endpoints work on this history.
+* **Nothing is persistent.** The history is empty after every restart, redeploy or free-plan sleep on Render.
+* At most `MAX_STORED_PREDICTIONS` predictions are kept (default 10,000). The oldest are evicted first, so memory stays bounded.
+* Each prediction keeps the **23 values the model actually used** (after imputation), `imputed_features`, the probability, prediction, risk band, threshold and model version, plus a `batch_id` when it came from a batch.
+* Access is thread-safe. The service runs as a single uvicorn process (`render.yaml`) so that all requests share one history.
 
 ---
 
@@ -237,14 +222,14 @@ Start the server with `uvicorn app.main:app --reload` and open **http://127.0.0.
 | Method | Endpoint | Purpose |
 |---|---|---|
 | GET | `/` | Service information |
-| GET | `/health` | Model loaded? Imputation available? Database mode and connectivity |
+| GET | `/health` | Model loaded? Imputation available? Storage type and number of predictions in memory |
 | GET | `/model/info` | Selected model, threshold, features, CV and test metrics |
-| POST | `/predictions` | Score **one customer** (missing features imputed) and store the result |
-| POST | `/predictions/batch` | Score **a portfolio** (up to 1,000 customers) and get a summary |
-| GET | `/predictions` | List stored predictions, **riskiest first**. Filters: `risk_band`, `predicted_default`, `batch_id`, `customer_ref`, `min_probability`, plus `limit` and `offset` |
-| GET | `/predictions/{id}` | One stored prediction with its inputs |
-| DELETE | `/predictions/{id}` | Delete a stored prediction |
-| GET | `/portfolio/summary` | Portfolio KPIs: predicted default rate, mean risk score, **share of credit limit at risk**, risk-band breakdown (optional `batch_id`) |
+| POST | `/predictions` | Score **one customer** (missing features imputed); added to the in-memory history |
+| POST | `/predictions/batch` | Score **a portfolio** (up to 1,000 customers) and get a summary; added to the history |
+| GET | `/predictions` | List predictions in the in-memory history, **riskiest first**. Filters: `risk_band`, `predicted_default`, `batch_id`, `customer_ref`, `min_probability`, plus `limit` and `offset` |
+| GET | `/predictions/{id}` | One prediction from the history, with its inputs |
+| DELETE | `/predictions/{id}` | Remove a prediction from the history |
+| GET | `/portfolio/summary` | Portfolio KPIs: predicted default rate, mean risk score, **share of credit limit at risk**, risk-band breakdown, over the in-memory history (optional `batch_id`) |
 | GET | `/portfolio/segments?dimension=…` | Predicted risk by `PAY_0`, `EDUCATION`, `MARRIAGE`, `SEX` or `AGE_GROUP`, riskiest segment first |
 
 **Risk bands** (on the default probability): LOW < 0.30 ≤ MEDIUM < 0.60 ≤ HIGH. `predicted_default` uses the model's decision threshold (0.5184), so a MEDIUM customer may still be flagged.
@@ -274,7 +259,7 @@ Real portfolio records can be incomplete. **Any feature may be omitted or sent a
 * **How values are filled:** numeric and ordinal features (`LIMIT_BAL`, `AGE`, `PAY_*`, `BILL_AMT*`, `PAY_AMT*`) get the **median**, and `SEX`, `EDUCATION`, `MARRIAGE` get the **most frequent value**. These values are computed from the **training split only** (`ml/imputation.py` → `models/imputation_values.json`), so there is no leakage.
 * **The trained model was not retrained or changed** (`credence_model.joblib` is byte-identical). The training data had no missing values, so an imputer inside the pipeline would have done nothing during training. Filling values *before* the unchanged pipeline therefore keeps training and inference consistent.
 * **Complete records give exactly the same predictions as before** (this is tested).
-* The response lists `imputed_features`, and stored rows record them, so the strategist can see which predictions rest partly on imputed data.
+* The response lists `imputed_features`, and the history records them, so the strategist can see which predictions rest partly on imputed data.
 * **More than 11 missing → HTTP 422.** A prediction based mostly on medians would be misleading.
 
 Example: `BILL_AMT3` omitted → `"imputed_features": ["BILL_AMT3"]`.
@@ -288,18 +273,17 @@ Example: `BILL_AMT3` omitted → `"imputed_features": ["BILL_AMT3"]`.
 
 Ranking quality (ROC-AUC) degrades gracefully. Losing **`PAY_0`** (the most recent repayment status) costs the most: it drops AUC by 0.031 on its own, so it is the most important field to collect.
 
-**Input validation:** values that are present must be in range. For example, `SEX=3`, `AGE<18`, `PAY_0<-2` or negative payments are rejected with HTTP 422, as are unknown fields, including the target column. If MySQL is enabled but unreachable, the API returns HTTP 503 instead of crashing.
+**Input validation:** values that are present must be in range. For example, `SEX=3`, `AGE<18`, `PAY_0<-2` or negative payments are rejected with HTTP 422, as are unknown fields, including the target column.
 
 ---
 
 ## 10. Setup guide for teammates
 
-> **Every teammate uses their own MySQL server and credentials.** The repository and ZIP never contain a `.env` file or any password. You create your own `.env` in step 4, and it stays on your machine (git ignores it).
+No database or credentials are needed. You only need Python.
 
 ### Prerequisites
 
 * **Python 3.12 or newer.** The project was developed and tested on Python 3.14. Check with `python3 --version` (on Windows, `python --version`).
-* **MySQL 8 Server**, installed and running, plus a MySQL user and password that you know, e.g. `root`. Download it from https://dev.mysql.com/downloads/mysql/ or use `brew install mysql` on macOS.
 * Git, if you clone rather than use the ZIP.
 
 ### Step 1: Get the project
@@ -333,51 +317,28 @@ Once it is active, your prompt starts with `(.venv)`. Activate it again in every
 pip install -r requirements.txt
 ```
 
-### Step 4: Configure `.env` with your own MySQL credentials
+### Step 4 (optional): Settings
 
-```bash
-cp .env.example .env           # Windows: copy .env.example .env
-```
+The defaults work as they are. To change the in-memory history size or the batch limit, run `cp .env.example .env` (on Windows, `copy .env.example .env`) and edit `.env`.
 
-Open **`.env`** (not `.env.example`) and set your own values:
-
-```
-MYSQL_HOST=localhost
-MYSQL_PORT=3306
-MYSQL_USER=root                      # your MySQL user
-MYSQL_PASSWORD=<your own password>   # replace the placeholder
-MYSQL_DATABASE=credence_ai
-```
-
-Never put a real password in `.env.example`, because that file is committed.
-
-### Step 5: Create the MySQL database and tables
-
-```bash
-python -m scripts.init_db
-```
-
-This connects with your `.env` credentials and creates the `credence_ai` database (if it doesn't exist) with the `predictions` and `prediction_batches` tables. It should end with `ready with tables: prediction_batches, predictions`.
-
-*Alternative (manual):* run `sql/schema.sql` in MySQL Workbench or with `mysql -u root -p < sql/schema.sql`. The API also creates missing tables automatically when it starts.
-
-### Step 6: Start FastAPI
+### Step 5: Start FastAPI
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-### Step 7: Open Swagger
+### Step 6: Open Swagger
 
 Go to **http://127.0.0.1:8000/docs**. To check that everything works:
 
-1. **GET /health** → `"status":"ok"`, `"model_loaded":true`, `"database_mode":"enabled"`, `"database_connected":true`.
-2. **POST /predictions** → *Try it out* → *Execute* (an example customer is pre-filled) → `201` with a prediction.
+1. **GET /health** → `"status":"ok"`, `"model_loaded":true`, `"storage":"in-memory (temporary, cleared on restart)"`.
+2. **POST /predictions** → *Try it out* → *Execute* (an example customer is pre-filled) → `201` with a prediction and a `prediction_id`.
+3. **GET /predictions** → the prediction you just made. It disappears when the server restarts.
 
 ### Optional
 
 ```bash
-pytest -v            # run the 49 tests (uses a separate credence_ai_test database)
+pytest -v            # run the 48 tests (no database needed)
 python -m ml.eda     # regenerate EDA figures
 python -m ml.train   # retrain the model (~1 min); a trained model is already included
 ```
@@ -386,11 +347,10 @@ python -m ml.train   # retrain the model (~1 min); a trained model is already in
 
 | Symptom | Fix |
 |---|---|
-| `Access denied for user 'root'@'localhost'` | Wrong user or password in `.env`, or you edited `.env.example` instead of `.env` |
-| `Can't connect to MySQL server` | The MySQL server isn't running. Start it (macOS: System Settings → MySQL, or `brew services start mysql`) |
-| `/health` shows `"database_connected": false` | Same causes as above. Re-run `python -m scripts.init_db` to see the exact error |
 | `ModuleNotFoundError` | The virtual environment isn't activated (step 2), or requirements aren't installed (step 3) |
 | Error while loading the model | Use the exact `scikit-learn` version from `requirements.txt` |
+| `GET /predictions` is empty | Expected after a restart: the history is in memory only |
+| `Address already in use` | Another server is running on port 8000. Stop it, or use `--port 8001` |
 
 ---
 
@@ -400,16 +360,17 @@ python -m ml.train   # retrain the model (~1 min); a trained model is already in
 pytest -v
 ```
 
-There are **49 tests**:
+There are **48 tests**, and **none of them needs a database**:
 
 * **ML tests:** dataset schema, the 80:20 stratified and deterministic split, the preprocessor being fitted on training data only, grouping of rare and unseen category codes, risk-band boundaries, the model artifact, probability validity, and the imputation values coming from the training split only.
-* **API tests** (TestClient/HTTPX): every endpoint, input validation, MySQL persistence and read-back, deletion, batch scoring, and the portfolio summary and segment calculations.
-* **Missing-value tests:** omitted and `null` values, the 11-feature limit, stored imputed values, and complete records being unchanged.
-* **Predict-only mode tests**, and a test of the additive schema migration.
-
-Database tests use a **separate MySQL database, `credence_ai_test`** (created automatically, and its rows are cleared around each test), so your real data is never touched. Override it with `TEST_DATABASE_URL` if needed. If MySQL cannot be reached, those tests are **skipped with an explanation**. They never fall back to SQLite.
-
----
+* **API tests** (TestClient/HTTPX): every endpoint, input validation, in-memory history read-back, deletion, batch scoring, the portfolio summary and segment calculations, and 404s.
+* **Missing-value tests:** omitted and `null` values, the 11-feature limit, imputed values recorded in the history, and complete records being unchanged.
+* **Database-free tests:**
+  * no database library (SQLAlchemy, PyMySQL, sqlite3, pymongo…) is imported by the app;
+  * the history is empty after a restart;
+  * oldest-first eviction at the capacity limit;
+  * unique ids under concurrent requests;
+  * deleted predictions leave the portfolio figures.
 
 ### Postman / Newman
 
@@ -424,15 +385,14 @@ npx -p newman -p newman-reporter-htmlextra newman run postman/Credence-AI.postma
   --reporter-htmlextra-export postman/reports/newman-local.html
 ```
 
-`GET /health` records the server's `database_mode`, and the later tests adapt to it. Against a MySQL-backed server they check storage, history and deletion. Against the predict-only deployment they check `stored: false` and the 503 responses.
+Run the folders in order: later requests use the prediction and batch ids that earlier ones create in the in-memory history.
 
 Recorded runs (HTML and JSON reports in `postman/reports/`):
 
 | Target | Requests | Assertions | Failed |
 |---|---|---|---|
-| Local, MySQL mode (`credence_ai_test` database) | 19 | 51 | 0 |
-| Local, predict-only mode (`DATABASE_ENABLED=false`) | 19 | 45 | 0 |
-| **Live Render deployment** (https://credence-ai-api.onrender.com, predict-only) | 19 | 45 | 0 |
+| Local server, no database (`newman-local.html`) | 19 | 51 | 0 |
+| Live Render deployment | *re-run after the database-free version is deployed* | | |
 
 ---
 
@@ -446,23 +406,25 @@ To re-run it, open it in VS Code (select the `.venv` interpreter) and choose **R
 
 ## 13. Deployment on Render
 
-**Live API:** https://credence-ai-api.onrender.com (Swagger: https://credence-ai-api.onrender.com/docs). It passed the full Postman collection, 45/45 assertions (`postman/reports/newman-render.html`).
+**Live API:** https://credence-ai-api.onrender.com (Swagger: https://credence-ai-api.onrender.com/docs).
 
-The public deployment runs in **predict-only mode** (`DATABASE_ENABLED=false`, set in `render.yaml`), so it needs **no database**. Your local MySQL is never connected to the internet.
+The service needs **no database** and no secrets.
 
 1. Push the repository to GitHub. `models/credence_model.joblib` (about 11 MB) and `models/imputation_values.json` are committed, so Render does not need to retrain.
 2. Sign in at https://render.com with GitHub, then choose **New → Blueprint** and select the repository. `render.yaml` configures:
    * plan: free
    * build: `pip install -r requirements.txt`
-   * start: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+   * start: `uvicorn app.main:app --host 0.0.0.0 --port $PORT` (a single process, so all requests share one in-memory history)
    * health check: `/health`
-   * `DATABASE_ENABLED=false` and `PYTHON_VERSION=3.14.3`
-3. Click **Apply** and wait for the build (a few minutes). The service URL is shown on its page, e.g. `https://credence-ai-api.onrender.com`.
-4. Verify it at `/health` (expect `"database_mode":"disabled"`), then open `/docs`, or run the Postman collection with the `render` environment (set `baseUrl` to your URL).
+   * `PYTHON_VERSION=3.14.3`, `MAX_STORED_PREDICTIONS=10000`
+3. Click **Apply** and wait for the build (a few minutes). Because the repository is connected, every later `git push` redeploys automatically.
+4. Verify at `/health` (expect `"storage":"in-memory (temporary, cleared on restart)"`), then open `/docs`, or run the Postman collection with the `render` environment.
 
-**Free plan notes:** the service sleeps after about 15 minutes without traffic, so the first request after that takes roughly 30–60 seconds. Peak memory measured locally was about 280 MB, within the 512 MB limit.
+**Free plan notes:**
 
-**Optional, enabling storage in the cloud:** create a hosted MySQL 8 database (e.g. Aiven, Railway or AWS RDS), then in Render set `DATABASE_ENABLED=true` and the secret `DATABASE_URL=mysql+pymysql://user:password@host:3306/credence_ai?charset=utf8mb4` (URL-encode special characters in the password).
+* The service sleeps after about 15 minutes without traffic, so the first request after that takes roughly 30–60 seconds.
+* **The in-memory history is cleared whenever the service sleeps, restarts or redeploys.**
+* Peak memory measured locally was about 280 MB, within the 512 MB limit.
 
 The `scikit-learn` version in `requirements.txt` is pinned to the version used for training (1.9.1). This matters because joblib models must be loaded with the same scikit-learn version.
 

@@ -1,10 +1,8 @@
 # Render Blueprint for the Credence AI backend.
 #
-# The public deployment runs in PREDICT-ONLY mode (DATABASE_ENABLED=false):
-# /predictions and /predictions/batch return predictions (with missing-value
-# imputation) but nothing is stored, and the history / portfolio endpoints
-# return 503. Render does not offer MySQL; to enable storage later, set
-# DATABASE_ENABLED=true and DATABASE_URL to a hosted MySQL 8 instance.
+# No database is used. Prediction history is kept in memory while the service
+# runs and is cleared on every restart / redeploy / free-plan sleep. Run a
+# single uvicorn process so all requests share the same history.
 services:
   - type: web
     name: credence-ai-api
@@ -18,5 +16,5 @@ services:
         value: 3.14.3
       - key: APP_ENV
         value: production
-      - key: DATABASE_ENABLED
-        value: "false"
+      - key: MAX_STORED_PREDICTIONS
+        value: "10000"

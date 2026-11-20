@@ -1,10 +1,13 @@
-"""API tests with FastAPI's TestClient (HTTPX) against the MySQL test database."""
+"""API tests with FastAPI's TestClient (HTTPX). No database: history is in memory."""
 
 import pytest
+from fastapi.testclient import TestClient
+
+from app.main import app
 
 
 # ---------------------------------------------------------------------------
-# Service endpoints (no database writes)
+# Service endpoints
 # ---------------------------------------------------------------------------
 def test_root(client):
     r = client.get("/")
@@ -26,15 +29,15 @@ def test_model_info(client):
     assert 0 < body["decision_threshold"] < 1
 
 
-def test_health(client, mysql_db):
+def test_health(client, store):
     r = client.get("/health")
     assert r.status_code == 200
     assert r.json() == {"status": "ok", "model_loaded": True, "missing_value_imputation": True,
-                        "database_mode": "enabled", "database_connected": True}
+                        "storage": "in-memory (temporary, cleared on restart)", "predictions_in_memory": 0}
 
 
 # ---------------------------------------------------------------------------
-# Input validation (rejected before touching the database)
+# Input validation
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize(
     "field,value",
@@ -64,9 +67,9 @@ def test_empty_batch_rejected(client):
 
 
 # ---------------------------------------------------------------------------
-# Predictions stored in MySQL
+# Predictions kept in the in-memory history
 # ---------------------------------------------------------------------------
-def test_single_prediction_is_stored(client, mysql_db, customer):
+def test_single_prediction_is_stored(client, store, customer):
     r = client.post("/predictions", json=customer)
     assert r.status_code == 201, r.text
     body = r.json()
@@ -85,18 +88,18 @@ def test_single_prediction_is_stored(client, mysql_db, customer):
     assert s["default_probability"] == pytest.approx(body["default_probability"])
 
 
-def test_get_missing_prediction_404(client, mysql_db):
+def test_get_missing_prediction_404(client, store):
     assert client.get("/predictions/999999").status_code == 404
 
 
-def test_delete_prediction(client, mysql_db, customer):
+def test_delete_prediction(client, store, customer):
     pid = client.post("/predictions", json=customer).json()["prediction_id"]
     assert client.delete(f"/predictions/{pid}").status_code == 204
     assert client.get(f"/predictions/{pid}").status_code == 404
     assert client.delete(f"/predictions/{pid}").status_code == 404
 
 
-def test_batch_prediction_and_portfolio_analytics(client, mysql_db, customer, low_risk_customer):
+def test_batch_prediction_and_portfolio_analytics(client, store, customer, low_risk_customer):
     payload = {"batch_name": "Q3 review", "customers": [customer, low_risk_customer, customer]}
     r = client.post("/predictions/batch", json=payload)
     assert r.status_code == 201, r.text
@@ -133,11 +136,11 @@ def test_batch_prediction_and_portfolio_analytics(client, mysql_db, customer, lo
         assert client.get("/portfolio/segments", params={"dimension": dim}).status_code == 200
 
 
-def test_portfolio_unknown_batch_404(client, mysql_db):
+def test_portfolio_unknown_batch_404(client, store):
     assert client.get("/portfolio/summary", params={"batch_id": 987654}).status_code == 404
 
 
-def test_empty_portfolio_summary(client, mysql_db):
+def test_empty_portfolio_summary(client, store):
     s = client.get("/portfolio/summary").json()
     assert s["total_customers"] == 0 and s["predicted_default_rate"] == 0.0
 
@@ -148,13 +151,13 @@ def test_empty_portfolio_summary(client, mysql_db):
 FILL = __import__("json").load(open("models/imputation_values.json"))["fill_values"]
 
 
-def test_complete_record_unchanged_by_imputation(client, mysql_db, customer):
+def test_complete_record_unchanged_by_imputation(client, store, customer):
     body = client.post("/predictions", json=customer).json()
     assert body["imputed_features"] == []
     assert body["default_probability"] == pytest.approx(0.749109, abs=1e-6)  # same as before the feature
 
 
-def test_omitted_feature_is_imputed_and_stored(client, mysql_db, customer):
+def test_omitted_feature_is_imputed_and_stored(client, store, customer):
     customer.pop("BILL_AMT3")
     r = client.post("/predictions", json=customer)
     assert r.status_code == 201, r.text
@@ -166,14 +169,14 @@ def test_omitted_feature_is_imputed_and_stored(client, mysql_db, customer):
     assert stored["imputed_features"] == ["BILL_AMT3"]
 
 
-def test_explicit_null_is_imputed(client, mysql_db, customer):
+def test_explicit_null_is_imputed(client, store, customer):
     customer.update({"AGE": None, "EDUCATION": None, "PAY_AMT2": None})
     body = client.post("/predictions", json=customer).json()
     assert sorted(body["imputed_features"]) == ["AGE", "EDUCATION", "PAY_AMT2"]
     assert 0 <= body["default_probability"] <= 1
 
 
-def test_imputation_matches_sending_fill_values(client, mysql_db, customer):
+def test_imputation_matches_sending_fill_values(client, store, customer):
     missing = dict(customer); missing.pop("PAY_0"); missing.pop("LIMIT_BAL")
     filled = dict(customer, PAY_0=FILL["PAY_0"], LIMIT_BAL=FILL["LIMIT_BAL"])
     a = client.post("/predictions", json=missing).json()["default_probability"]
@@ -181,7 +184,7 @@ def test_imputation_matches_sending_fill_values(client, mysql_db, customer):
     assert a == pytest.approx(b)
 
 
-def test_maximum_allowed_missing_features(client, mysql_db, customer):
+def test_maximum_allowed_missing_features(client, store, customer):
     for f in ["SEX", "EDUCATION", "MARRIAGE", "AGE", "BILL_AMT1", "BILL_AMT2", "BILL_AMT3",
               "BILL_AMT4", "BILL_AMT5", "BILL_AMT6", "PAY_AMT6"]:  # exactly 11
         customer.pop(f)
@@ -196,7 +199,7 @@ def test_out_of_range_still_rejected_when_others_missing(client, customer):
     assert client.post("/predictions", json=customer).status_code == 422
 
 
-def test_batch_with_missing_values(client, mysql_db, customer, low_risk_customer):
+def test_batch_with_missing_values(client, store, customer, low_risk_customer):
     incomplete = dict(low_risk_customer); incomplete.pop("PAY_AMT1"); incomplete["AGE"] = None
     body = client.post("/predictions/batch", json={"customers": [customer, incomplete]}).json()
     assert body["customers_with_imputed_values"] == 1
@@ -205,53 +208,67 @@ def test_batch_with_missing_values(client, mysql_db, customer, low_risk_customer
 
 
 # ---------------------------------------------------------------------------
-# Database-optional (predict-only) mode: DATABASE_ENABLED=false
+# Database-free operation and in-memory history
 # ---------------------------------------------------------------------------
-@pytest.fixture
-def db_disabled(client):
-    client.app.state.database_enabled = False
-    yield
-    client.app.state.database_enabled = True
+def test_app_does_not_import_any_database_library():
+    import subprocess
+    import sys
+    code = ("import sys, app.main; "
+            "bad = [m for m in sys.modules if m.split('.')[0] in "
+            "('sqlalchemy', 'pymysql', 'MySQLdb', 'mysql', 'sqlite3', 'pymongo', 'motor')]; "
+            "print(bad); sys.exit(1 if bad else 0)")
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert result.returncode == 0, f"database modules imported: {result.stdout}"
 
 
-def test_db_disabled_predict_still_works(client, db_disabled, customer):
-    customer.pop("BILL_AMT3")
-    r = client.post("/predictions", json=customer)
-    assert r.status_code == 201
-    body = r.json()
-    assert body["stored"] is False and body["prediction_id"] is None
-    assert body["imputed_features"] == ["BILL_AMT3"]
+def test_predict_returns_probability_prediction_and_risk(client, store, customer):
+    body = client.post("/predictions", json=customer).json()
+    assert body["default_probability"] == pytest.approx(0.749109, abs=1e-6)
+    assert body["predicted_default"] is True and body["risk_band"] == "HIGH"
+    assert body["stored"] is True and body["prediction_id"] == 1
 
 
-def test_db_disabled_batch_not_stored(client, db_disabled, customer, low_risk_customer):
-    body = client.post("/predictions/batch", json={"customers": [customer, low_risk_customer]}).json()
-    assert body["stored"] is False and body["batch_id"] is None
-    assert body["total_customers"] == 2 and body["predicted_defaults"] == 1
+def test_history_counts_and_ids(client, store, customer, low_risk_customer):
+    ids = [client.post("/predictions", json=c).json()["prediction_id"]
+           for c in (customer, low_risk_customer, customer)]
+    assert ids == [1, 2, 3]
+    assert client.get("/health").json()["predictions_in_memory"] == 3
+    assert client.get("/predictions").json()["total"] == 3
 
 
-@pytest.mark.parametrize("path", ["/predictions", "/predictions/1", "/portfolio/summary", "/portfolio/segments"])
-def test_db_disabled_history_endpoints_503(client, db_disabled, path):
-    r = client.get(path)
-    assert r.status_code == 503
-    assert "DATABASE_ENABLED=false" in r.json()["detail"]
+def test_history_is_not_persistent_across_restarts(customer):
+    with TestClient(app) as first:
+        pid = first.post("/predictions", json=customer).json()["prediction_id"]
+        assert first.get(f"/predictions/{pid}").status_code == 200
+    with TestClient(app) as restarted:  # new process lifetime -> empty history
+        assert restarted.get(f"/predictions/{pid}").status_code == 404
+        assert restarted.get("/health").json()["predictions_in_memory"] == 0
 
 
-def test_db_disabled_health(client, db_disabled):
-    assert client.get("/health").json() == {
-        "status": "ok", "model_loaded": True, "missing_value_imputation": True,
-        "database_mode": "disabled", "database_connected": None}
-    assert client.get("/").json()["database_mode"] == "disabled"
+def test_history_capacity_evicts_oldest(client, store, customer):
+    old_limit = store.max_predictions
+    store.max_predictions = 3
+    try:
+        ids = [client.post("/predictions", json=customer).json()["prediction_id"] for _ in range(5)]
+        assert len(store) == 3
+        assert client.get(f"/predictions/{ids[0]}").status_code == 404   # evicted
+        assert client.get(f"/predictions/{ids[-1]}").status_code == 200  # newest kept
+    finally:
+        store.max_predictions = old_limit
 
 
-# ---------------------------------------------------------------------------
-# Additive schema migration for databases created before imputed_features existed
-# ---------------------------------------------------------------------------
-def test_migration_adds_imputed_features_column(mysql_db):
-    from sqlalchemy import inspect, text
+def test_deleted_prediction_leaves_portfolio(client, store, customer, low_risk_customer):
+    pid = client.post("/predictions", json=customer).json()["prediction_id"]
+    client.post("/predictions", json=low_risk_customer)
+    assert client.get("/portfolio/summary").json()["total_customers"] == 2
+    client.delete(f"/predictions/{pid}")
+    summary = client.get("/portfolio/summary").json()
+    assert summary["total_customers"] == 1 and summary["predicted_defaults"] == 0
 
-    from app.database import engine, init_db
-    with engine.begin() as conn:
-        conn.execute(text("ALTER TABLE predictions DROP COLUMN imputed_features"))
-    assert "imputed_features" not in {c["name"] for c in inspect(engine).get_columns("predictions")}
-    init_db(engine, create_database=False)
-    assert "imputed_features" in {c["name"] for c in inspect(engine).get_columns("predictions")}
+
+def test_concurrent_predictions_get_unique_ids(client, store, customer):
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        ids = list(pool.map(lambda _: client.post("/predictions", json=customer).json()["prediction_id"],
+                            range(40)))
+    assert len(set(ids)) == 40 and len(store) == 40

@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "00000000-0000-0000-0000-00000000002a",
     "name": "Credence AI API",
-    "description": "Automated tests for the Credence AI credit default prediction API. Works against a MySQL-backed server (database_mode=enabled) and the predict-only public deployment (database_mode=disabled): GET /health records the mode and later tests adapt. Run the folders in order.",
+    "description": "Automated tests for the Credence AI credit default prediction API (no database; prediction history is kept in memory while the server runs). Run the folders in order: later requests use ids created by earlier ones.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -32,7 +32,7 @@
                   "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
                   "const b = pm.response.json();",
                   "pm.test(\"stakeholder is Credit Portfolio Strategist\", () => pm.expect(b.stakeholder).to.eql(\"Credit Portfolio Strategist\"));",
-                  "pm.test(\"database_mode reported\", () => pm.expect([\"enabled\", \"disabled\"]).to.include(b.database_mode));"
+                  "pm.test(\"storage is in-memory (no database)\", () => pm.expect(b.storage).to.include(\"in-memory\"));"
                 ]
               }
             }
@@ -62,13 +62,13 @@
                 "exec": [
                   "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
                   "const b = pm.response.json();",
-                  "pm.collectionVariables.set(\"dbMode\", b.database_mode);",
                   "pm.test(\"status ok\", () => pm.expect(b.status).to.eql(\"ok\"));",
                   "pm.test(\"model loaded\", () => pm.expect(b.model_loaded).to.be.true);",
                   "pm.test(\"missing-value imputation available\", () => pm.expect(b.missing_value_imputation).to.be.true);",
-                  "pm.test(\"database connected when enabled / null when disabled\", () => {",
-                  "    if (b.database_mode === \"enabled\") pm.expect(b.database_connected).to.be.true;",
-                  "    else pm.expect(b.database_connected).to.be.null;",
+                  "pm.test(\"no database fields; in-memory storage reported\", () => {",
+                  "    pm.expect(b).to.not.have.property(\"database_connected\");",
+                  "    pm.expect(b.storage).to.include(\"in-memory\");",
+                  "    pm.expect(b.predictions_in_memory).to.be.a(\"number\");",
                   "});",
                   "pm.test(\"response time < 2s\", () => pm.expect(pm.response.responseTime).to.be.below(2000));"
                 ]
@@ -151,17 +151,16 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "const dbOn = pm.collectionVariables.get(\"dbMode\") === \"enabled\";",
                   "pm.test(\"201 Created\", () => pm.response.to.have.status(201));",
                   "const b = pm.response.json();",
                   "pm.test(\"probability in [0,1]\", () => { pm.expect(b.default_probability).to.be.within(0, 1); });",
                   "pm.test(\"high-risk example predicted as Default\", () => { pm.expect(b.predicted_default).to.be.true; pm.expect(b.prediction_label).to.eql(\"Default\"); });",
                   "pm.test(\"risk band valid\", () => pm.expect([\"LOW\", \"MEDIUM\", \"HIGH\"]).to.include(b.risk_band));",
                   "pm.test(\"nothing imputed for a complete record\", () => pm.expect(b.imputed_features).to.eql([]));",
-                  "pm.test(\"stored only when the database is enabled\", () => {",
-                  "    pm.expect(b.stored).to.eql(dbOn);",
-                  "    if (dbOn) { pm.expect(b.prediction_id).to.be.a(\"number\"); pm.collectionVariables.set(\"predictionId\", b.prediction_id); }",
-                  "    else pm.expect(b.prediction_id).to.be.null;",
+                  "pm.test(\"kept in in-memory history with an id\", () => {",
+                  "    pm.expect(b.stored).to.be.true;",
+                  "    pm.expect(b.prediction_id).to.be.a(\"number\");",
+                  "    pm.collectionVariables.set(\"predictionId\", b.prediction_id);",
                   "});"
                 ]
               }
@@ -566,15 +565,15 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "const dbOn = pm.collectionVariables.get(\"dbMode\") === \"enabled\";",
                   "pm.test(\"201 Created\", () => pm.response.to.have.status(201));",
                   "const b = pm.response.json();",
                   "pm.test(\"2 customers, 1 predicted default\", () => { pm.expect(b.total_customers).to.eql(2); pm.expect(b.predicted_defaults).to.eql(1); });",
                   "pm.test(\"1 customer with imputed values\", () => pm.expect(b.customers_with_imputed_values).to.eql(1));",
                   "pm.test(\"risk bands sum to total\", () => pm.expect(b.risk_band_breakdown.reduce((s, x) => s + x.customers, 0)).to.eql(2));",
-                  "pm.test(\"stored only when the database is enabled\", () => {",
-                  "    pm.expect(b.stored).to.eql(dbOn);",
-                  "    if (dbOn) pm.collectionVariables.set(\"batchId\", b.batch_id); else pm.expect(b.batch_id).to.be.null;",
+                  "pm.test(\"batch kept in in-memory history\", () => {",
+                  "    pm.expect(b.stored).to.be.true;",
+                  "    pm.expect(b.batch_id).to.be.a(\"number\");",
+                  "    pm.collectionVariables.set(\"batchId\", b.batch_id);",
                   "});"
                 ]
               }
@@ -584,7 +583,7 @@
       ]
     },
     {
-      "name": "6. History and portfolio analytics (MySQL)",
+      "name": "6. In-memory history and portfolio analytics",
       "item": [
         {
           "name": "GET /predictions - riskiest first",
@@ -614,13 +613,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "const dbOn = pm.collectionVariables.get(\"dbMode\") === \"enabled\";",
-                  "if (dbOn) {",
+                  "{",
                   "    pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
                   "    const p = pm.response.json().items.map(i => i.default_probability);",
                   "    pm.test(\"sorted by probability, descending\", () => pm.expect(p).to.eql(p.slice().sort((a, b) => b - a)));",
-                  "} else {",
-                  "    pm.test(\"503 when database disabled\", () => pm.response.to.have.status(503));",
                   "}"
                 ]
               }
@@ -650,14 +646,11 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "const dbOn = pm.collectionVariables.get(\"dbMode\") === \"enabled\";",
-                  "if (dbOn) {",
+                  "{",
                   "    pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
                   "    const b = pm.response.json();",
                   "    pm.test(\"imputed feature persisted\", () => pm.expect(b.imputed_features).to.eql([\"BILL_AMT3\"]));",
                   "    pm.test(\"stored value is the training median\", () => pm.expect(b.BILL_AMT3).to.eql(20031));",
-                  "} else {",
-                  "    pm.test(\"503 when database disabled\", () => pm.response.to.have.status(503));",
                   "}"
                 ]
               }
@@ -693,14 +686,11 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "const dbOn = pm.collectionVariables.get(\"dbMode\") === \"enabled\";",
-                  "if (dbOn) {",
+                  "{",
                   "    pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
                   "    const b = pm.response.json();",
                   "    pm.test(\"2 customers in batch\", () => pm.expect(b.total_customers).to.eql(2));",
                   "    pm.test(\"credit-limit-at-risk share in [0,1]\", () => pm.expect(b.share_of_credit_limit_at_risk).to.be.within(0, 1));",
-                  "} else {",
-                  "    pm.test(\"503 when database disabled\", () => pm.response.to.have.status(503));",
                   "}"
                 ]
               }
@@ -736,13 +726,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "const dbOn = pm.collectionVariables.get(\"dbMode\") === \"enabled\";",
-                  "if (dbOn) {",
+                  "{",
                   "    pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
                   "    const s = pm.response.json().segments.map(x => x.average_default_probability);",
                   "    pm.test(\"riskiest segment first\", () => pm.expect(s).to.eql(s.slice().sort((a, b) => b - a)));",
-                  "} else {",
-                  "    pm.test(\"503 when database disabled\", () => pm.response.to.have.status(503));",
                   "}"
                 ]
               }
@@ -772,9 +759,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "const dbOn = pm.collectionVariables.get(\"dbMode\") === \"enabled\";",
-                  "if (dbOn) pm.test(\"204 No Content\", () => pm.response.to.have.status(204));",
-                  "else pm.test(\"503 when database disabled\", () => pm.response.to.have.status(503));"
+                  "pm.test(\"204 No Content\", () => pm.response.to.have.status(204));"
                 ]
               }
             }
@@ -803,9 +788,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "const dbOn = pm.collectionVariables.get(\"dbMode\") === \"enabled\";",
-                  "if (dbOn) pm.test(\"404 after delete\", () => pm.response.to.have.status(404));",
-                  "else pm.test(\"503 when database disabled\", () => pm.response.to.have.status(503));"
+                  "pm.test(\"404 after delete\", () => pm.response.to.have.status(404));"
                 ]
               }
             }
@@ -815,10 +798,6 @@
     }
   ],
   "variable": [
-    {
-      "key": "dbMode",
-      "value": ""
-    },
     {
       "key": "predictionId",
       "value": "0"

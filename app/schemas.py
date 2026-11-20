@@ -101,8 +101,8 @@ class RiskBand(str, Enum):
 
 
 class PredictionResult(BaseModel):
-    prediction_id: int | None = Field(None, description="Row id in MySQL (null if not stored)")
-    stored: bool = Field(..., description="True if the prediction was saved to MySQL")
+    prediction_id: int | None = Field(None, description="Id in the in-memory prediction history")
+    stored: bool = Field(..., description="True if kept in the in-memory history (temporary, not persistent)")
     customer_ref: str | None = None
     default_probability: float = Field(..., ge=0, le=1)
     predicted_default: bool
@@ -123,7 +123,7 @@ class RiskBandBreakdown(BaseModel):
 
 
 class BatchPredictionResponse(BaseModel):
-    batch_id: int | None = Field(None, description="Null when the database is disabled")
+    batch_id: int | None = Field(None, description="Id of the batch in the in-memory history")
     stored: bool
     batch_name: str | None
     total_customers: int
@@ -136,7 +136,7 @@ class BatchPredictionResponse(BaseModel):
 
 
 class StoredPrediction(CustomerFeatures):
-    """A prediction row read back from MySQL: inputs + outputs."""
+    """A prediction read back from the in-memory history: inputs + outputs."""
 
     model_config = ConfigDict(from_attributes=True, extra="ignore")
 
@@ -167,7 +167,7 @@ class PredictionList(BaseModel):
 
 
 class PortfolioSummary(BaseModel):
-    batch_id: int | None = Field(None, description="Null = whole stored portfolio")
+    batch_id: int | None = Field(None, description="Null = all predictions in the in-memory history")
     total_customers: int
     predicted_defaults: int
     predicted_default_rate: float
@@ -218,5 +218,5 @@ class HealthResponse(BaseModel):
     status: str
     model_loaded: bool
     missing_value_imputation: bool
-    database_mode: str = Field(..., description='"enabled" or "disabled" (DATABASE_ENABLED)')
-    database_connected: bool | None = Field(..., description="Null when the database is disabled")
+    storage: str = Field(..., description="Where prediction history is kept (no database is used)")
+    predictions_in_memory: int = Field(..., description="Predictions currently held in the in-memory history")

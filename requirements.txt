@@ -13,11 +13,6 @@ uvicorn[standard]==0.54.0
 pydantic==2.14.4
 python-dotenv==1.2.4
 
-# ---- Database (MySQL) ----
-SQLAlchemy==2.1.9
-PyMySQL==1.2.4
-cryptography==50.0.2   # required by PyMySQL for MySQL 8 caching_sha2_password auth
-
 # ---- Testing ----
 pytest==9.2.0
 httpx==0.28.1

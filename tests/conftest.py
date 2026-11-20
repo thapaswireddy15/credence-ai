@@ -1,43 +1,14 @@
 """Shared pytest fixtures.
 
-Database tests run against a SEPARATE MySQL database (default: ``<your db>_test``,
-override with ``TEST_DATABASE_URL``) so that your real predictions are never
-touched. If MySQL is unreachable, database tests are skipped with a clear
-message -- they are never silently redirected to SQLite.
+Credence AI uses no database: the tests need no MySQL server or credentials.
+Each test that relies on prediction history starts with an empty in-memory store.
 """
 
-import os
-
 import pytest
+from fastapi.testclient import TestClient
 
-# --- Point the application at the test database BEFORE importing it --------
-from app import config
-
-_base_url = config._build_database_url()
-_test_url = os.getenv("TEST_DATABASE_URL") or _base_url.set(database=f"{_base_url.database}_test")
-os.environ["DATABASE_URL"] = (
-    _test_url if isinstance(_test_url, str) else _test_url.render_as_string(hide_password=False)
-)
-config.get_settings.cache_clear()
-
-from fastapi.testclient import TestClient  # noqa: E402
-from sqlalchemy import delete  # noqa: E402
-
-from app.database import SessionLocal, engine, init_db  # noqa: E402
-from app.main import app  # noqa: E402
-from app.models import Prediction, PredictionBatch  # noqa: E402
-from app.schemas import EXAMPLE_CUSTOMER  # noqa: E402
-
-
-def _mysql_available() -> tuple[bool, str]:
-    try:
-        init_db(engine, create_database=True)
-        return True, ""
-    except Exception as exc:  # pragma: no cover - depends on environment
-        return False, str(exc).splitlines()[0]
-
-
-_DB_OK, _DB_ERROR = _mysql_available()
+from app.main import app
+from app.schemas import EXAMPLE_CUSTOMER
 
 
 @pytest.fixture(scope="session")
@@ -47,19 +18,12 @@ def client():
 
 
 @pytest.fixture
-def mysql_db():
-    """Skip if MySQL is unavailable; otherwise give each test empty tables."""
-    if not _DB_OK:
-        pytest.skip(f"MySQL test database unavailable ({_DB_ERROR}). Configure .env - see README.")
-    with SessionLocal() as session:
-        session.execute(delete(Prediction))
-        session.execute(delete(PredictionBatch))
-        session.commit()
-    yield
-    with SessionLocal() as session:
-        session.execute(delete(Prediction))
-        session.execute(delete(PredictionBatch))
-        session.commit()
+def store(client):
+    """The app's in-memory prediction history, emptied before and after the test."""
+    s = client.app.state.store
+    s.clear()
+    yield s
+    s.clear()
 
 
 @pytest.fixture

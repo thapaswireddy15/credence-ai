@@ -1,11 +1,9 @@
 """Customer-level prediction endpoints."""
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session
 
-from app import crud
 from app.config import get_settings
-from app.dependencies import get_predictor, optional_db, require_db
+from app.dependencies import get_predictor, get_store
 from app.predictor import CreditDefaultPredictor, ModelOutput
 from app.schemas import (
     BatchPredictionRequest,
@@ -16,6 +14,7 @@ from app.schemas import (
     RiskBand,
     StoredPrediction,
 )
+from app.store import PredictionStore, risk_band_breakdown
 
 router = APIRouter(prefix="/predictions", tags=["Predictions"])
 
@@ -45,14 +44,14 @@ def _predict(predictor: CreditDefaultPredictor, customers: list[CustomerFeatures
 
 
 @router.post("", response_model=PredictionResult, status_code=status.HTTP_201_CREATED,
-             summary="Predict default for one customer (missing features are imputed) and store it")
+             summary="Predict default for one customer (missing features are imputed); kept in in-memory history")
 def predict_customer(
     customer: CustomerFeatures,
-    db: Session | None = Depends(optional_db),
+    store: PredictionStore = Depends(get_store),
     predictor: CreditDefaultPredictor = Depends(get_predictor),
 ):
     output = _predict(predictor, [customer])[0]
-    row = crud.create_prediction(db, customer, output, predictor) if db is not None else None
+    row = store.create_prediction(customer, output, predictor)
     return _result(output, predictor, customer.customer_ref, row)
 
 
@@ -60,7 +59,7 @@ def predict_customer(
              summary="Score a portfolio of customers in one request")
 def predict_batch(
     request: BatchPredictionRequest,
-    db: Session | None = Depends(optional_db),
+    store: PredictionStore = Depends(get_store),
     predictor: CreditDefaultPredictor = Depends(get_predictor),
 ):
     max_size = get_settings().max_batch_size
@@ -69,9 +68,7 @@ def predict_batch(
                             detail=f"A batch may contain at most {max_size} customers")
     outputs = _predict(predictor, request.customers)
 
-    batch, rows = None, [None] * len(outputs)
-    if db is not None:
-        batch, rows = crud.create_batch(db, request.batch_name, request.customers, outputs, predictor)
+    batch, rows = store.create_batch(request.batch_name, request.customers, outputs, predictor)
 
     total = len(outputs)
     defaults = sum(o.predicted_default for o in outputs)
@@ -79,21 +76,22 @@ def predict_batch(
     for o in outputs:
         band_counts[o.risk_band] = band_counts.get(o.risk_band, 0) + 1
     return BatchPredictionResponse(
-        batch_id=batch.id if batch is not None else None,
-        stored=batch is not None,
+        batch_id=batch.id,
+        stored=True,
         batch_name=request.batch_name,
         total_customers=total,
         predicted_defaults=defaults,
         predicted_default_rate=round(defaults / total, 4),
         average_default_probability=round(sum(o.default_probability for o in outputs) / total, 4),
         customers_with_imputed_values=sum(bool(o.imputed_features) for o in outputs),
-        risk_band_breakdown=crud.risk_band_breakdown(band_counts, total),
+        risk_band_breakdown=risk_band_breakdown(band_counts, total),
         predictions=[_result(o, predictor, c.customer_ref, r)
                      for o, c, r in zip(outputs, request.customers, rows)],
     )
 
 
-@router.get("", response_model=PredictionList, summary="List stored predictions (riskiest first)")
+@router.get("", response_model=PredictionList,
+            summary="List predictions from the in-memory history (riskiest first)")
 def list_predictions(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -102,10 +100,10 @@ def list_predictions(
     batch_id: int | None = Query(None, ge=1),
     customer_ref: str | None = Query(None, max_length=64),
     min_probability: float | None = Query(None, ge=0, le=1),
-    db: Session = Depends(require_db),
+    store: PredictionStore = Depends(get_store),
 ):
-    total, items = crud.list_predictions(
-        db, limit, offset,
+    total, items = store.list_predictions(
+        limit, offset,
         risk_band=risk_band.value if risk_band else None,
         predicted_default=predicted_default,
         batch_id=batch_id,
@@ -116,15 +114,17 @@ def list_predictions(
                           items=[StoredPrediction.model_validate(i) for i in items])
 
 
-@router.get("/{prediction_id}", response_model=StoredPrediction, summary="Get one stored prediction")
-def get_prediction(prediction_id: int, db: Session = Depends(require_db)):
-    row = crud.get_prediction(db, prediction_id)
+@router.get("/{prediction_id}", response_model=StoredPrediction,
+            summary="Get one prediction from the in-memory history")
+def get_prediction(prediction_id: int, store: PredictionStore = Depends(get_store)):
+    row = store.get_prediction(prediction_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Prediction {prediction_id} not found")
     return StoredPrediction.model_validate(row)
 
 
-@router.delete("/{prediction_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a stored prediction")
-def delete_prediction(prediction_id: int, db: Session = Depends(require_db)):
-    if not crud.delete_prediction(db, prediction_id):
+@router.delete("/{prediction_id}", status_code=status.HTTP_204_NO_CONTENT,
+               summary="Remove a prediction from the in-memory history")
+def delete_prediction(prediction_id: int, store: PredictionStore = Depends(get_store)):
+    if not store.delete_prediction(prediction_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"Prediction {prediction_id} not found")
