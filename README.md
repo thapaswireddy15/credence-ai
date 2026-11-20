@@ -28,7 +28,7 @@ Credence AI is the machine learning backend that supports these decisions. It is
 | Backend | FastAPI, Uvicorn, Pydantic |
 | Database | **MySQL 8**, SQLAlchemy ORM, PyMySQL |
 | Testing | Pytest, FastAPI TestClient, HTTPX |
-| Development & deployment | VS Code, Git & GitHub, Kaggle Notebooks (experimentation), Render (API hosting) |
+| Development & deployment | VS Code, Jupyter Notebook (analysis), Git & GitHub, Render (API hosting), Postman/Newman (API testing) |
 
 ---
 
@@ -58,7 +58,7 @@ Credence AI/
 │   ├── imputation.py           # missing-value fill values (training split) + robustness evaluation
 │   └── plotting.py             # shared figure styling
 ├── notebooks/
-│   └── credence_ai_credit_default.ipynb   # self-contained, Kaggle-compatible notebook
+│   └── credence_ai_credit_default.ipynb   # self-contained analysis notebook (EDA → models → conclusions)
 ├── data/raw/default of credit card clients.csv
 ├── models/
 │   ├── credence_model.joblib   # trained pipeline (preprocessing + Random Forest)
@@ -143,7 +143,7 @@ All preprocessing is a scikit-learn `ColumnTransformer` placed **inside the same
 1. The 80:20 split happens first: `test_size=0.2, random_state=42, stratify=y`.
 2. Transformers are fitted on the training data only, and re-fitted inside every CV fold.
 3. The test set is used only for the final evaluation.
-4. The saved `.joblib` artifact contains the fitted preprocessing, so the API applies **exactly** the same transformations. The pipeline uses only built-in scikit-learn classes, so a model trained in the Kaggle notebook can also be loaded by the API.
+4. The saved `.joblib` artifact contains the fitted preprocessing, so the API applies **exactly** the same transformations. The pipeline uses only built-in scikit-learn classes, so a model trained in the notebook can also be loaded by the API.
 
 ---
 
@@ -436,14 +436,11 @@ Recorded runs (HTML and JSON reports in `postman/reports/`):
 
 ---
 
-## 12. Kaggle notebook
+## 12. Jupyter notebook
 
-`notebooks/credence_ai_credit_default.ipynb` is self-contained. It covers EDA, the preprocessing rationale, training all four models, evaluation, the FP/FN analysis, threshold selection and conclusions.
+`notebooks/credence_ai_credit_default.ipynb` is self-contained and already executed, so all outputs and charts are saved in it. It covers EDA, the preprocessing rationale, training all four models, evaluation, the false-positive/false-negative analysis, threshold selection and conclusions.
 
-* **On Kaggle:** create a notebook, add the *Default of Credit Card Clients* dataset as input, and upload this notebook. It finds the CSV under `/kaggle/input/` automatically and writes outputs to `/kaggle/working/`.
-* **Locally:** run it from the `notebooks/` folder. It reads `../data/raw/…` and writes to `notebooks/outputs/` (git-ignored).
-
-The notebook reproduces the same metrics as `ml/train.py`. Kaggle is used **only for experimentation**, never to host the API.
+To re-run it, open it in VS Code (select the `.venv` interpreter) and choose **Run All**. It reads `../data/raw/…` and writes its outputs to `notebooks/outputs/`, which is git-ignored. It reproduces the same metrics as `ml/train.py`.
 
 ---
 
